@@ -13,7 +13,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <spring-boot.version>2.5.4</spring-boot.version>
         <mybatis.plus.version>3.4.2</mybatis.plus.version>
-        <liteflow.version>2.12.4</liteflow.version>
+        <liteflow.version>2.12.4.1</liteflow.version>
 
     </properties>
     <dependencies>

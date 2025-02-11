@@ -82,7 +82,7 @@ public class RuleMatcher {
         if (response.isSuccess()) {
             log.info(s, ruleId);
             SupplementaryConditions contextBean = response.getContextBean(SupplementaryConditions.class);
-            int inheritType = contextBean.getInheritType();
+            int inheritType = contextBean.getFmPolicyRules().getInheritType();
             List<Long> childIds = new ArrayList<>();
             if (inheritType == 2) {
                 if (contextBean.doDerive) {

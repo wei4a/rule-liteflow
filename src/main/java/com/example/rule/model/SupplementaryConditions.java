@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.rule.service.FmPolicyRuleService;
 import com.example.rule.service.FmService;
+import com.example.rule.util.ScriptLogOutput;
 import com.yomahub.liteflow.script.annotation.ScriptBean;
 import lombok.Data;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,8 @@ public class SupplementaryConditions {
     private FmService fmService;
     @Resource
     private FmPolicyRuleService fmPolicyRuleService;
+    @Resource
+    public ScriptLogOutput scriptLogOutput= new ScriptLogOutput();
     //查询子告警条件
     LambdaQueryWrapper<MSEvent> triggeredParams = Wrappers.lambdaQuery();
     //查询父告警条件
