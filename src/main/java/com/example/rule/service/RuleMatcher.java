@@ -89,6 +89,9 @@ public class RuleMatcher {
                     MSEvent newEvent = deriveNewAlarm(contextBean, childIds, fmPolicyRules);
                     mergeAndFinishInherit(newEvent, childIds, fmPolicyRules);
                 }
+            }else if (inheritType == 1) {
+                if (contextBean.doMainSubRelation) {
+                }
             }
         } else {
             log.info(s1, response.getCause());

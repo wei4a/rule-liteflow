@@ -17,6 +17,7 @@ public class WhetherDeriveCmp extends NodeComponent {
     public void process() throws Exception {
         SupplementaryConditions spConditions = this.getContextBean(SupplementaryConditions.class);
         List<MSEvent> childrens = spConditions.getChildrens();
+        List<MSEvent> parents = spConditions.getParents();
         FmPolicyRules fmPolicyRules = spConditions.getFmPolicyRules();
         if (fmPolicyRules.getInheritType() == 2) {
             //衍生
@@ -26,6 +27,15 @@ public class WhetherDeriveCmp extends NodeComponent {
             }
             if (childrens.size() < fmPolicyRules.getThreshold()) {
                 log.info("当前事件子事件小于阈值，不需要进行判断");
+                this.setIsEnd(true);
+            }
+        }else if (fmPolicyRules.getInheritType() == 1) {
+            //主次
+            if (CollectionUtils.isEmpty(childrens)&& !spConditions.isSubAlarm()) {
+                log.info("当前事件没有子事件，不需要进行判断");
+                this.setIsEnd(true);
+            }else if(CollectionUtils.isEmpty(parents)&& spConditions.isSubAlarm()){
+                log.info("当前事件没有父事件，不需要进行判断");
                 this.setIsEnd(true);
             }
         }

@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableCaching
 @EnableScheduling
+@MapperScan("com.example.rule.mapper")
 public class RuleApplication {
 
     public static void main(String[] args) {
