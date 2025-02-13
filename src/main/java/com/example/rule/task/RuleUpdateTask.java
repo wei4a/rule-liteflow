@@ -3,7 +3,6 @@ package com.example.rule.task;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.rule.mapper.FmPolicyRuleMapper;
 import com.example.rule.model.FmPolicyRules;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -47,9 +46,6 @@ public class RuleUpdateTask implements CommandLineRunner {
      * 随机数生成器
      */
     private final Random random = new Random();
-
-    @Resource
-    private ObjectMapper objectMapper;
 
     /**
      * 定时更新规则信息（每 30 分钟执行一次）
