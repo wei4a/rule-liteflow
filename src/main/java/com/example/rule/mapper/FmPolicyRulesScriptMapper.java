@@ -2,6 +2,7 @@ package com.example.rule.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.example.rule.model.FmPolicyRulesScript;
+import org.apache.ibatis.annotations.Mapper;
 
 /**
 * @author zhang
@@ -9,6 +10,7 @@ import com.example.rule.model.FmPolicyRulesScript;
 * @createDate 2025-02-12 10:04:53
 * @Entity generator.model.FmPolicyRulesScript
 */
+@Mapper
 public interface FmPolicyRulesScriptMapper extends BaseMapper<FmPolicyRulesScript> {
 
 }

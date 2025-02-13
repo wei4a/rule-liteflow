@@ -14,6 +14,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -31,11 +33,9 @@ public class RuleMatcher {
     private final Object lock = new Object();
 
     public void matchAndExecuteRules(MSEvent msEvent) {
-        List<FmPolicyRules> rules = fmPolicyRuleService.getRulesByEventId(msEvent.getEventId());
+        List<FmPolicyRules> rulesByEventId = fmPolicyRuleService.getRulesByEventId(msEvent.getEventId());
         List<FmPolicyRules> rulesByTitle = fmPolicyRuleService.getRulesByTitle(msEvent.getTitle());
-        if (CollectionUtils.isNotEmpty(rulesByTitle)) {
-            rules.addAll(rulesByTitle);
-        }
+        List<FmPolicyRules> rules= getCombinedRules(rulesByEventId, rulesByTitle);
         if (CollectionUtils.isNotEmpty(rules)) {
             for (FmPolicyRules rule : rules) {
                 int delayTime = rule.getDelayTime();
@@ -45,9 +45,7 @@ public class RuleMatcher {
                 }
                 if (delayTime > 0) {
                     // 延迟执行规则
-                    long timeReal = getDelayTimeReal(msEvent, rule);
-                    MqMessage mqMessage = getMqMessage(msEvent, rule, timeReal);
-                    activeMQProducer.sendDelayedRule(mqMessage);
+                    processDelayedRule(msEvent, rule);
                 } else {
                     executeRule(msEvent, rule, Integer.parseInt(rule.getId().toString()), "Rule executed successfully: {}", "Rule execution failed: {}");
                 }
@@ -55,8 +53,30 @@ public class RuleMatcher {
             }
         }
     }
-
-
+    private void processDelayedRule(MSEvent msEvent, FmPolicyRules rule) {
+        long timeReal = getDelayTimeReal(msEvent, rule);
+        MqMessage mqMessage = getMqMessage(msEvent, rule, timeReal);
+        activeMQProducer.sendDelayedRule(mqMessage);
+    }
+    /**
+     * 合并规则列表并根据规则ID去重
+     * @param rules 根据eventId获取的规则列表
+     * @param rulesByTitle 根据title获取的规则列表
+     * @return 去重后的规则列表
+     */
+    private List<FmPolicyRules> getCombinedRules(List<FmPolicyRules> rules, List<FmPolicyRules> rulesByTitle) {
+        List<FmPolicyRules> allRules = new ArrayList<>();
+        if (CollectionUtils.isNotEmpty(rules)) {
+            allRules.addAll(rules);
+        }
+        if (CollectionUtils.isNotEmpty(rulesByTitle)) {
+            allRules.addAll(rulesByTitle);
+        }
+        // 根据规则ID去重
+        Map<Long, FmPolicyRules> uniqueRulesMap = allRules.stream()
+                .collect(Collectors.toMap(FmPolicyRules::getId, rule -> rule, (existing, replacement) -> existing));
+        return new ArrayList<>(uniqueRulesMap.values());
+    }
     public void matchAndExecuteDelayRules(MqMessage mqMessage) {
         log.info("Executing rule: {}", mqMessage.getRuleId());
         // 这里添加具体的规则执行逻辑
@@ -76,11 +96,11 @@ public class RuleMatcher {
 
     }
 
-    private void executeRule(MSEvent msEvent, FmPolicyRules fmPolicyRules, Integer ruleId, String s, String s1) {
+    private void executeRule(MSEvent msEvent, FmPolicyRules fmPolicyRules, Integer ruleId, String successMsg, String errorMsg) {
         SupplementaryConditions conditions = getSupplementaryConditions(msEvent, fmPolicyRules);
         LiteflowResponse response = flowExecutor.execute2Resp(String.valueOf(ruleId), null, conditions);
         if (response.isSuccess()) {
-            log.info(s, ruleId);
+            log.info(successMsg, ruleId);
             SupplementaryConditions contextBean = response.getContextBean(SupplementaryConditions.class);
             int inheritType = contextBean.getFmPolicyRules().getInheritType();
             List<Long> childIds = new ArrayList<>();
@@ -91,10 +111,11 @@ public class RuleMatcher {
                 }
             }else if (inheritType == 1) {
                 if (contextBean.doMainSubRelation) {
+                    //todo
                 }
             }
         } else {
-            log.info(s1, response.getCause());
+            log.info(errorMsg, response.getCause());
         }
     }
 

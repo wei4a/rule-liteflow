@@ -37,6 +37,10 @@ public class FmPolicyRulesScript implements Serializable {
      * 
      */
     private String scriptLanguage;
+    /**
+     *
+     */
+    private String scriptKey;
 
     /**
      * 

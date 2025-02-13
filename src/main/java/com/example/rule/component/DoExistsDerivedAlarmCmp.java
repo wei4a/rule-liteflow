@@ -20,13 +20,13 @@ public class DoExistsDerivedAlarmCmp extends NodeComponent {
         FmPolicyRules fmPolicyRules = spConditions.getFmPolicyRules();
         String secondaryEventId = fmPolicyRules.getSecondaryEventId();
         String primaryEventId = fmPolicyRules.getPrimaryEventId();
-        if(StringUtils.isBlank(secondaryEventId)&&secondaryEventId.contains(msEvent.getEventId())){
+        if(StringUtils.isNotBlank(secondaryEventId)&&secondaryEventId.contains(msEvent.getEventId())){
             spConditions.setSubAlarm(true);
             List<MSEvent> parents = spConditions.getParents();
             if(CollectionUtils.isNotEmpty(parents)){
                 spConditions.setDoMainSubRelation(true);
             }
-        }else if(StringUtils.isBlank(primaryEventId)&&primaryEventId.contains(msEvent.getEventId())){
+        }else if(StringUtils.isNotBlank(primaryEventId)&&primaryEventId.contains(msEvent.getEventId())){
             spConditions.setSubAlarm(false);
             List<MSEvent> childrens = spConditions.getChildrens();
             if(CollectionUtils.isNotEmpty(childrens)){

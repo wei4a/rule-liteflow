@@ -11,10 +11,11 @@
             <result property="scriptType" column="SCRIPT_TYPE" jdbcType="VARCHAR"/>
             <result property="scriptLanguage" column="SCRIPT_LANGUAGE" jdbcType="VARCHAR"/>
             <result property="enable" column="ENABLE" jdbcType="DECIMAL"/>
+        <result property="scriptKey" column="SCRIPT_KEY" jdbcType="VARCHAR"/>
     </resultMap>
 
     <sql id="Base_Column_List">
         SCRIPT_ID,SCRIPT_NAME,SCRIPT_DATA,
-        SCRIPT_TYPE,SCRIPT_LANGUAGE,ENABLE
+        SCRIPT_TYPE,SCRIPT_LANGUAGE,ENABLE,SCRIPT_KEY
     </sql>
 </mapper>

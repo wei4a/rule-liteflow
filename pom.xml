@@ -14,7 +14,8 @@
         <spring-boot.version>2.5.4</spring-boot.version>
         <mybatis.plus.version>3.4.2</mybatis.plus.version>
         <liteflow.version>2.12.4.1</liteflow.version>
-
+        <fastjson.version>1.2.83</fastjson.version>
+        <guava.version>13.0.1</guava.version>
     </properties>
     <dependencies>
         <dependency>
@@ -30,7 +31,11 @@
             <artifactId>mybatis-spring-boot-starter</artifactId>
             <version>2.2.2</version>
         </dependency>
-
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+            <version>${fastjson.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.oracle.database.jdbc</groupId>
             <artifactId>ojdbc8</artifactId>
@@ -67,7 +72,11 @@
             <artifactId>liteflow-script-javax</artifactId>
             <version>${liteflow.version}</version>
         </dependency>
-
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

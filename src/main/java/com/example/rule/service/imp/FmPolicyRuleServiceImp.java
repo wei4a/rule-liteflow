@@ -22,11 +22,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
-import java.util.List;
-import java.util.Objects;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -67,40 +65,62 @@ public class FmPolicyRuleServiceImp extends ServiceImpl<FmPolicyRuleMapper, FmPo
         fmPolicyRuleMapper.insert(rule);
         String secondaryEventId = rule.getSecondaryEventId();
         if (StringUtils.isNotBlank(secondaryEventId)) {
-            SetOperations<String, String> setOps = redisTemplate.opsForSet();
-            try {
-                String ruleJson = objectMapper.writeValueAsString(rule);
-                String[] secondaryEventIds = secondaryEventId.split(",");
-                for (String secondaryEventId1 : secondaryEventIds) {
-                    // 清理和验证分割后的字符串
-                    String trimmedEventId = secondaryEventId1.trim();
-                    if (trimmedEventId.isEmpty()) {
-                        continue;
-                    }
-                    // 将规则信息存储到 Redis Set 中
-                    String ruleGroupKey = RULE_GROUP_KEY_PREFIX + trimmedEventId;
-                    redisTemplate.execute(new SessionCallback<Object>() {
-                        @Override
-                        public Object execute(RedisOperations operations) throws DataAccessException {
-                            operations.multi();
-                            setOps.add(ruleGroupKey, ruleJson);
-                            long expireTime = BASE_EXPIRE_TIME + random.nextInt((int) EXPIRE_TIME_OFFSET);
-                            operations.expire(ruleGroupKey, expireTime, TimeUnit.MINUTES);
-                            return operations.exec();
-                        }
-                    });
-                }
-            } catch (JsonProcessingException e) {
-                log.error("Failed to serialize rule: {}", e.getMessage());
-            }
+            addRuleToRedis(rule, secondaryEventId);
         }
         log.info("Rule added and cached in Redis: {}", rule.getId());
     }
+    /**
+     * 将规则添加到 Redis 中
+     *
+     * @param rule            规则对象
+     * @param secondaryEventId 二级事件 ID
+     */
+    private void addRuleToRedis(FmPolicyRules rule, String secondaryEventId) {
+        SetOperations<String, String> setOps = redisTemplate.opsForSet();
+        try {
+            String ruleJson = String.valueOf(rule.getId());
+            Arrays.stream(secondaryEventId.split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .forEach(trimmedEventId -> {
+                        String ruleGroupKey = RULE_GROUP_KEY_PREFIX + trimmedEventId;
+                        redisTemplate.execute(new SessionCallback<Object>() {
+                            @Override
+                            public Object execute(RedisOperations operations) throws DataAccessException {
+                                operations.multi();
+                                setOps.add(ruleGroupKey, ruleJson);
+                                long expireTime = BASE_EXPIRE_TIME + random.nextInt((int) EXPIRE_TIME_OFFSET);
+                                operations.expire(ruleGroupKey, expireTime, TimeUnit.MINUTES);
+                                return operations.exec();
+                            }
+                        });
+                    });
+        } catch (Exception e) {
+            log.error("Failed to serialize rule: {}", e.getMessage());
+        }
+    }
+
 
     @Override
     public List<FmPolicyRules> getRulesByEventId(String eventId) {
-        // 从 Redis Set 中获取规则信息
-        String ruleGroupKey = RULE_GROUP_KEY_PREFIX + eventId;
+        return getRulesByKey(eventId, rule -> Wrappers.lambdaQuery(FmPolicyRules.class)
+                .like(FmPolicyRules::getSecondaryEventId, eventId));
+    }
+
+    @Override
+    public List<FmPolicyRules> getRulesByTitle(String title) {
+        return getRulesByKey(title, rule -> Wrappers.lambdaQuery(FmPolicyRules.class)
+                .like(FmPolicyRules::getPrimaryTitle, title));
+    }
+    /**
+     * 根据键获取规则列表
+     *
+     * @param key       键
+     * @param query     查询条件构造器
+     * @return 规则列表
+     */
+    private List<FmPolicyRules> getRulesByKey(String key, Function<FmPolicyRules, LambdaQueryWrapper<FmPolicyRules>> query) {
+        String ruleGroupKey = RULE_GROUP_KEY_PREFIX + key;
         SetOperations<String, String> setOps = redisTemplate.opsForSet();
         Set<String> ruleJsons = setOps.members(ruleGroupKey);
         if (CollectionUtils.isEmpty(ruleJsons)) {
@@ -110,125 +130,75 @@ public class FmPolicyRuleServiceImp extends ServiceImpl<FmPolicyRuleMapper, FmPo
                 if (lock.tryLock(10, 30, TimeUnit.SECONDS)) {
                     // 再次检查 Redis 中是否有数据，防止多线程竞争
                     ruleJsons = setOps.members(ruleGroupKey);
-                    if(CollectionUtils.isEmpty(ruleJsons)){
+                    if (CollectionUtils.isEmpty(ruleJsons)) {
                         // 如果 Redis 中没有数据，从数据库加载
-                        LambdaQueryWrapper<FmPolicyRules> queryWrapper = Wrappers.lambdaQuery(FmPolicyRules.class).
-                                like(FmPolicyRules::getSecondaryEventId, eventId);
+                        LambdaQueryWrapper<FmPolicyRules> queryWrapper = query.apply(null);
                         List<FmPolicyRules> rules = fmPolicyRuleMapper.selectList(queryWrapper);
                         if (!rules.isEmpty()) {
                             // 将规则信息存储到 Redis Set 中
-                            for (FmPolicyRules rule : rules) {
+                            rules.forEach(rule -> {
                                 try {
-                                    String ruleJson = objectMapper.writeValueAsString(rule);
+                                    String ruleJson = String.valueOf(rule.getId());
                                     setOps.add(ruleGroupKey, ruleJson);
-                                } catch (JsonProcessingException e) {
+                                } catch (Exception e) {
                                     log.error("Failed to serialize rule: {}", e.getMessage());
                                 }
-                            }
+                            });
                             redisTemplate.expire(ruleGroupKey, 1, TimeUnit.HOURS); // 设置过期时间为1小时
                         }
                         return rules;
                     }
                 }
             } catch (InterruptedException e) {
-                log.error("Failed to acquire lock for event {}: {}", eventId, e.getMessage());
+                log.error("Failed to acquire lock for event {}: {}", key, e.getMessage());
             } finally {
                 if (lock.isHeldByCurrentThread()) {
                     lock.unlock();
                 }
             }
         }
-
-        // 将 Redis 中的数据转换为 LiteFlowRule 对象
-        return ruleJsons.stream()
-                .map(ruleJson -> {
-                    try {
-                        return objectMapper.readValue(ruleJson, FmPolicyRules.class);
-                    } catch (JsonProcessingException e) {
-                        log.error("Failed to deserialize rule: {}", e.getMessage());
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+        //根据规则ID查询规则信息
+        List<Long> ruleIds = ruleJsons.stream().map(Long::parseLong).collect(Collectors.toList());
+        return fmPolicyRuleMapper.selectList(Wrappers.lambdaQuery(FmPolicyRules.class).in(FmPolicyRules::getId, ruleIds));
     }
-
-    @Override
-    public List<FmPolicyRules> getRulesByTitle(String title) {
-        // 从 Redis Set 中获取规则信息
-        String ruleGroupKey = RULE_GROUP_KEY_PREFIX + title;
-        SetOperations<String, String> setOps = redisTemplate.opsForSet();
-        Set<String> ruleJsons = setOps.members(ruleGroupKey);
-        if (CollectionUtils.isNotEmpty(ruleJsons)) {
-            // 使用分布式锁确保同一时间只有一个线程加载数据到 Redis 中
-            RLock lock = redissonClient.getLock("lock:" + ruleGroupKey);
-            try {
-                if (lock.tryLock(10, 30, TimeUnit.SECONDS)) {
-                    // 再次检查 Redis 中是否有数据，防止多线程竞争
-                    ruleJsons = setOps.members(ruleGroupKey);
-                    // 如果 Redis 中没有数据，从数据库加载
-                    List<FmPolicyRules> rules = fmPolicyRuleMapper.selectList(Wrappers.lambdaQuery(FmPolicyRules.class).
-                            like(FmPolicyRules::getPrimaryTitle, title));
-                    if (!rules.isEmpty()) {
-                        // 将规则信息存储到 Redis Set 中
-                        for (FmPolicyRules rule : rules) {
-                            try {
-                                String ruleJson = objectMapper.writeValueAsString(rule);
-                                setOps.add(ruleGroupKey, ruleJson);
-                            } catch (JsonProcessingException e) {
-                                log.error("Failed to serialize rule: {}", e.getMessage());
-                            }
-                        }
-                        redisTemplate.expire(ruleGroupKey, 1, TimeUnit.HOURS); // 设置过期时间为1小时
-                    }
-                    return rules;
-                }
-            } catch (InterruptedException e) {
-                log.error("Failed to acquire lock for event {}: {}", title, e.getMessage());
-            } finally {
-                if (lock.isHeldByCurrentThread()) {
-                    lock.unlock();
-                }
-            }
-        }
-
-        // 将 Redis 中的数据转换为 LiteFlowRule 对象
-        return ruleJsons.stream()
-                .map(ruleJson -> {
-                    try {
-                        return objectMapper.readValue(ruleJson, FmPolicyRules.class);
-                    } catch (JsonProcessingException e) {
-                        log.error("Failed to deserialize rule: {}", e.getMessage());
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-    }
-
     @Override
     @Transactional
     public void deleteRule(Long id) {
         // 删除数据库中的规则
         FmPolicyRules rule = fmPolicyRuleMapper.selectById(id);
         if (rule != null) {
-            fmPolicyRuleMapper.deleteById(id);
-            String secondaryEventId = rule.getSecondaryEventId();
-            SetOperations<String, String> setOps = redisTemplate.opsForSet();
-            if (StringUtils.isNotBlank(secondaryEventId)) {
-                String[] secondaryEventIds = secondaryEventId.split(",");
-                for (String secondaryEventId1 : secondaryEventIds) {
-                    // 从 Redis Set 中删除规则信息
-                    String ruleGroupKey = RULE_GROUP_KEY_PREFIX + secondaryEventId1;
-                    try {
-                        String ruleJson = objectMapper.writeValueAsString(rule);
-                        setOps.remove(ruleGroupKey, ruleJson);
-                    } catch (JsonProcessingException e) {
-                        log.error("Failed to serialize rule: {}", e.getMessage());
-                    }
-                }
+            int i = fmPolicyRuleMapper.deleteById(id);
+            if (i>0) {
+                deleteRuleFromRedis(rule);
             }
             log.info("Rule deleted and cache updated: {}", id);
+        }
+    }
+    /**
+     * 从 Redis 中删除规则
+     *
+     * @param rule            规则对象
+     */
+    private void deleteRuleFromRedis(FmPolicyRules rule) {
+        SetOperations<String, String> setOps = redisTemplate.opsForSet();
+        try {
+            String ruleJson = String.valueOf(rule.getId());
+            Arrays.stream(rule.getSecondaryEventId().split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .forEach(trimmedEventId -> {
+                        String ruleGroupKey = RULE_GROUP_KEY_PREFIX + trimmedEventId;
+                        setOps.remove(ruleGroupKey, ruleJson);
+                    });
+            Arrays.stream(rule.getSecondaryEventId().split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .forEach(trimmedTitle -> {
+                        String ruleGroupKey = RULE_GROUP_KEY_PREFIX + trimmedTitle;
+                        setOps.remove(ruleGroupKey, ruleJson);
+                    });
+        } catch (Exception e) {
+            log.error("Failed to serialize rule: {}", e.getMessage());
         }
     }
 }

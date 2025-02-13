@@ -3,7 +3,6 @@ package com.example.rule.task;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.rule.mapper.FmPolicyRuleMapper;
 import com.example.rule.model.FmPolicyRules;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -17,6 +16,7 @@ import org.springframework.stereotype.Component;
 import javax.annotation.Resource;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Component
@@ -64,83 +64,68 @@ public class RuleUpdateTask implements CommandLineRunner {
             return;
         }
         // 按规则组 ID 分组
-        Map<String, List<FmPolicyRules>> eventIddRules = rules.stream()
-                .filter(rule -> StringUtils.isNotBlank(rule.getSecondaryEventId()))
-                .flatMap(rule -> Arrays.stream(rule.getSecondaryEventId().split(","))
-                        .filter(StringUtils::isNotBlank)
-                        .map(String::trim)
-                        .map(eventId -> new AbstractMap.SimpleEntry<>(eventId, rule)))
-                .collect(Collectors.groupingBy(
-                        Map.Entry::getKey,
-                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())
-                ));
+        Map<String, List<FmPolicyRules>> eventIddRules = groupRulesByField(rules, FmPolicyRules::getSecondaryEventId);
         // 按规则组 title 分组
-        Map<String, List<FmPolicyRules>> titleRules = rules.stream()
-                .filter(rule -> StringUtils.isNotBlank(rule.getPrimaryTitle()))
-                .flatMap(rule -> Arrays.stream(rule.getPrimaryTitle().split(","))
-                        .filter(StringUtils::isNotBlank)
-                        .map(String::trim)
-                        .map(title -> new AbstractMap.SimpleEntry<>(title, rule)))
-                .collect(Collectors.groupingBy(
-                        Map.Entry::getKey,
-                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())
-                ));
-        for (Map.Entry<String, List<FmPolicyRules>> entry : eventIddRules.entrySet()) {
-            String eventId = entry.getKey();
+        Map<String, List<FmPolicyRules>> titleRules = groupRulesByField(rules, FmPolicyRules::getPrimaryTitle);
+        // 处理分组规则
+        processGroupedRules(eventIddRules);
+        processGroupedRules(titleRules);
+    }
+    /**
+     * 处理分组后的规则
+     *
+     * @param groupedRules 分组后的规则映射
+     */
+    private void processGroupedRules(Map<String, List<FmPolicyRules>> groupedRules) {
+        for (Map.Entry<String, List<FmPolicyRules>> entry : groupedRules.entrySet()) {
+            String key = entry.getKey();
             List<FmPolicyRules> ruleList = entry.getValue();
-            if(CollectionUtils.isEmpty(ruleList)){
+            if (CollectionUtils.isEmpty(ruleList)) {
                 continue;
             }
             // 删除旧的 Redis 缓存
-            String ruleGroupKey = RULE_KEY_PREFIX+eventId;
+            String ruleGroupKey = RULE_KEY_PREFIX + key;
             redisTemplate.delete(ruleGroupKey);
+
             // 将新的规则信息存储到 Redis Set 中
             SetOperations<String, String> setOps = redisTemplate.opsForSet();
             for (FmPolicyRules rule : ruleList) {
                 try {
                     // 将规则对象序列化为 JSON 字符串
-                    String ruleJson = objectMapper.writeValueAsString(rule);
+                    String ruleJson = String.valueOf(rule.getId());
                     // 存储到 Redis Set 中
                     setOps.add(ruleGroupKey, ruleJson);
-                    log.info("Rule cached in Redis: {} (group: {})", rule.getId(), eventId);
-                } catch (JsonProcessingException e) {
+                    log.info("Rule cached in Redis: {} (group: {})", rule.getId(), key);
+                } catch (Exception e) {
                     log.error("Failed to serialize rule: {}", e.getMessage());
                 }
             }
+
             // 统一设置过期时间
             long expireTime = BASE_EXPIRE_TIME + random.nextInt((int) EXPIRE_TIME_OFFSET);
             redisTemplate.expire(ruleGroupKey, expireTime, TimeUnit.MINUTES);
-            log.info("Rules updated for group: {} (expire in {} minutes)", eventId, expireTime);
-        }
-        for (Map.Entry<String, List<FmPolicyRules>> entry : titleRules.entrySet()) {
-            String title = entry.getKey();
-            List<FmPolicyRules> ruleList = entry.getValue();
-            if(CollectionUtils.isEmpty(ruleList)){
-                continue;
-            }
-            // 删除旧的 Redis 缓存
-            String ruleGroupKey = RULE_KEY_PREFIX+title;
-            redisTemplate.delete(ruleGroupKey);
-            // 将新的规则信息存储到 Redis Set 中
-            SetOperations<String, String> setOps = redisTemplate.opsForSet();
-            for (FmPolicyRules rule : ruleList) {
-                try {
-                    // 将规则对象序列化为 JSON 字符串
-                    String ruleJson = objectMapper.writeValueAsString(rule);
-                    // 存储到 Redis Set 中
-                    setOps.add(ruleGroupKey, ruleJson);
-                    log.info("Rule cached in Redis: {} (group: {})", rule.getId(), title);
-                } catch (JsonProcessingException e) {
-                    log.error("Failed to serialize rule: {}", e.getMessage());
-                }
-            }
-            // 统一设置过期时间
-            long expireTime = BASE_EXPIRE_TIME + random.nextInt((int) EXPIRE_TIME_OFFSET);
-            redisTemplate.expire(ruleGroupKey, expireTime, TimeUnit.MINUTES);
-            log.info("Rules updated for group: {} (expire in {} minutes)", title, expireTime);
+            log.info("Rules updated for group: {} (expire in {} minutes)", key, expireTime);
         }
     }
-
+    /**
+     * 根据指定字段对规则进行分组
+     *
+     * @param rules 规则列表
+     * @param fieldExtractor 字段提取器
+     * @return 分组后的规则映射
+     */
+    private Map<String, List<FmPolicyRules>> groupRulesByField(List<FmPolicyRules> rules, Function<FmPolicyRules, String> fieldExtractor) {
+        return rules.stream()
+                .filter(rule -> StringUtils.isNotBlank(fieldExtractor.apply(rule)))
+                .flatMap(rule -> Arrays.stream(fieldExtractor.apply(rule).split(","))
+                        .filter(StringUtils::isNotBlank)
+                        .map(String::trim)
+                        .map(key -> new AbstractMap.SimpleEntry<>(key, rule)))
+                .collect(Collectors.groupingBy(
+                        Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())
+                ));
+    }
     @Override
     public void run(String... args) {
         log.info("Loading rules on startup...");
