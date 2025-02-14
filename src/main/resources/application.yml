@@ -42,6 +42,9 @@ liteflow:
     #是否启用这条规则
     chainEnableField: is_deploy
     chainCustomSql: select * from fm_policy_rules_new where  is_deploy = 1
+    #以下是决策路由字段的配置，如果你没用到决策路由，可以不配置
+    routeField: route
+    namespaceField: namespace
     #以下是script表的配置，如果你没使用到脚本，下面可以不配置
     scriptTableName: fm_policy_rules_script
     scriptIdField: SCRIPT_KEY
@@ -53,6 +56,7 @@ liteflow:
     scriptEnableField: enable
     #脚本表自定义过滤SQL
     scriptCustomSql: select * from fm_policy_rules_script where enable = 1
+
   #默认为false，如果设为true，则会开启WHEN的线程池隔离机制，这意味着每一个when都会有单独的线程池。
   #这个特性对于运行复杂的嵌套when时是可以提升运行速度的且规避掉一些锁的问题。
   when-thread-pool-isolate: true

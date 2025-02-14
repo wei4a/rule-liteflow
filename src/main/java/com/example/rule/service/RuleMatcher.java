@@ -99,6 +99,7 @@ public class RuleMatcher {
     private void executeRule(MSEvent msEvent, FmPolicyRules fmPolicyRules, Integer ruleId, String successMsg, String errorMsg) {
         SupplementaryConditions conditions = getSupplementaryConditions(msEvent, fmPolicyRules);
         LiteflowResponse response = flowExecutor.execute2Resp(String.valueOf(ruleId), null, conditions);
+        List<LiteflowResponse> liteflowResponses = flowExecutor.executeRouteChain("liteflow-rule",null, conditions);
         if (response.isSuccess()) {
             log.info(successMsg, ruleId);
             SupplementaryConditions contextBean = response.getContextBean(SupplementaryConditions.class);
